@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import io from 'socket.io-client';
 
-const socket = io('https://restaurantapp-por20ab8.b4a.run');
+// رابط السيرفر الجديد على Back4App
+const socket = io('https://restaurantapp-pcz20abs.b4a.run');
 
 // نغمة مميزة ومريحة للزبون عند تحديث حالة الطلب
 const playCustomerNotificationSound = () => {
@@ -39,7 +40,16 @@ const playCustomerNotificationSound = () => {
 function CustomerMenu() {
   const { tableId } = useParams();
   const currentTable = tableId || '1';
-  
+
+  // نوع الطلب: 'dine_in' (داخل المطعم) أو 'delivery' (توصيل خارجي)
+  const [orderType, setOrderType] = useState('dine_in');
+  const [showTypeModal, setShowTypeModal] = useState(true);
+
+  // بيانات التوصيل الخارجي
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerAddress, setCustomerAddress] = useState('');
+
   const [cart, setCart] = useState([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [currentOrder, setCurrentOrder] = useState(null);
@@ -51,11 +61,14 @@ function CustomerMenu() {
 
   useEffect(() => {
     socket.on('current_menu', (menu) => {
-      setMenuItems(menu);
+      setMenuItems(menu || []);
     });
 
     socket.on('order_status_updated', (updatedOrder) => {
-      if (String(updatedOrder.tableId) === String(currentTable)) {
+      if (
+        (updatedOrder.orderType === 'dine_in' && String(updatedOrder.tableId) === String(currentTable)) ||
+        (updatedOrder.orderType === 'delivery' && updatedOrder.customerPhone === customerPhone)
+      ) {
         setCurrentOrder(updatedOrder);
         playCustomerNotificationSound();
       }
@@ -74,7 +87,7 @@ function CustomerMenu() {
       socket.off('order_status_updated');
       socket.off('dish_added');
     };
-  }, [currentTable]);
+  }, [currentTable, customerPhone]);
 
   const addToCart = (item) => {
     setCart((prevCart) => {
@@ -93,19 +106,34 @@ function CustomerMenu() {
   };
 
   const totalItemsCount = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const totalPrice = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const subtotal = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  const deliveryFee = orderType === 'delivery' ? 15 : 0;
+  const totalPrice = subtotal + deliveryFee;
 
   const handleSendOrder = () => {
     if (cart.length === 0) return;
 
+    if (orderType === 'delivery') {
+      if (!customerName || !customerPhone || !customerAddress) {
+        alert('يرجى ملء كافة بيانات التوصيل (الاسم، الهاتف، والعنوان).');
+        return;
+      }
+    }
+
     const newOrder = {
       id: Date.now(),
-      tableId: currentTable,
+      orderType: orderType,
+      tableId: orderType === 'dine_in' ? currentTable : 'توصيل',
+      customerName: orderType === 'delivery' ? customerName : '',
+      customerPhone: orderType === 'delivery' ? customerPhone : '',
+      customerAddress: orderType === 'delivery' ? customerAddress : '',
       items: cart,
+      subtotal: subtotal,
+      deliveryFee: deliveryFee,
       total: totalPrice,
       note: orderNote,
       status: 'pending',
-      createdAt: new Date().toLocaleTimeString('ar-MA', { hour: '2-digit', minute: '2-digit' })
+      createdAt: new Date().toLocaleTimeString('ar-MA', { hour: '2-digit', minute: '2-digit' }),
     };
 
     socket.emit('send_order', newOrder);
@@ -120,28 +148,85 @@ function CustomerMenu() {
     alert(`تم إرسال تنبيه للنادل للطاولة رقم ${currentTable}`);
   };
 
-  const filteredItems = menuItems.filter(item => item.category === activeCategory);
   const categories = ['أطباق رئيسية', 'مقبلات', 'مشروبات', 'حلويات'];
+  const filteredItems = menuItems.filter((item) => item.category === activeCategory);
 
   return (
     <div className="max-w-md mx-auto min-h-screen bg-slate-900 text-slate-100 pb-32 font-sans dir-rtl" dir="rtl">
-      
-      {/* 1. الشريط العلوي الثابت: يظهر فيه اسم المطعم، رقم الطاولة، وحالة الطلب الحالي */}
+      {/* نافذة اختيار نوع الطلب أولاً */}
+      {showTypeModal && (
+        <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
+          <div className="bg-slate-900 border border-slate-800 w-full max-w-sm p-6 rounded-3xl shadow-2xl text-center space-y-5">
+            <div className="w-16 h-16 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-2xl flex items-center justify-center text-3xl mx-auto">
+              🍽️
+            </div>
+            <div>
+              <h2 className="text-xl font-black text-amber-400">أهلاً بك في مطعمنا!</h2>
+              <p className="text-slate-400 text-xs mt-1 font-bold">حدد مكان استلام طلبك للمتابعة:</p>
+            </div>
+
+            <div className="space-y-3">
+              <button
+                onClick={() => {
+                  setOrderType('dine_in');
+                  setShowTypeModal(false);
+                }}
+                className="w-full bg-amber-500 hover:bg-amber-600 text-slate-950 font-black p-3.5 rounded-2xl shadow-lg transition cursor-pointer flex items-center justify-center gap-2 text-sm"
+              >
+                <span>🏢</span> أتناول الطعام داخل المطعم
+              </button>
+
+              <button
+                onClick={() => {
+                  setOrderType('delivery');
+                  setShowTypeModal(false);
+                }}
+                className="w-full bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-100 font-black p-3.5 rounded-2xl shadow-lg transition cursor-pointer flex flex-col items-center justify-center gap-0.5 text-sm"
+              >
+                <div className="flex items-center gap-2">
+                  <span>🛵</span> طلب خارجي (توصيل للمنزل)
+                </div>
+                <span className="text-[10px] text-amber-400 font-bold">
+                  💡 مصاريف التوصيل الفوري: 15 درهم فقط
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* الشريط العلوي الثابت */}
       <header className="sticky top-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 p-4 space-y-3">
         <div className="flex justify-between items-center">
           <div>
-            <h1 className="text-base font-black text-amber-400">قائمة الطعام</h1>
-            <p className="text-[11px] text-slate-400 font-bold">طاولة رقم #{currentTable}</p>
+            <h1 className="text-base font-black text-amber-400">قائمة الطعام المباشرة</h1>
+            <p className="text-[11px] text-slate-400 font-bold">
+              {orderType === 'delivery'
+                ? '🛵 طلب توصيل خارجي (+15 د.م)'
+                : `🏢 داخل المطعم - طاولة #${currentTable}`}
+            </p>
           </div>
-          <button
-            onClick={handleCallWaiter}
-            className="bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500 hover:text-slate-900 font-black text-xs py-2 px-3.5 rounded-2xl transition active:scale-95 cursor-pointer"
-          >
-            🔔 استدعاء النادل
-          </button>
+
+          <div className="flex gap-2">
+            <button
+              onClick={() => setShowTypeModal(true)}
+              className="bg-slate-800 text-amber-400 border border-slate-700 text-[10px] font-bold px-2.5 py-1.5 rounded-xl transition cursor-pointer"
+            >
+              تغيير 🔄
+            </button>
+
+            {orderType === 'dine_in' && (
+              <button
+                onClick={handleCallWaiter}
+                className="bg-amber-500/20 text-amber-400 border border-amber-500/30 hover:bg-amber-500 hover:text-slate-900 font-black text-xs py-1.5 px-3 rounded-xl transition active:scale-95 cursor-pointer"
+              >
+                🔔 النادل
+              </button>
+            )}
+          </div>
         </div>
 
-        {/* عرض الطلب والحالة في الأعلى بشكل حي */}
+        {/* عرض حالة الطلب الحالي */}
         {currentOrder && (
           <div className="bg-slate-800/80 border border-slate-700/60 p-3 rounded-2xl text-xs">
             <div className="flex justify-between items-center mb-1 text-slate-400 font-bold">
@@ -160,15 +245,48 @@ function CustomerMenu() {
             )}
             {currentOrder.status === 'completed' && (
               <p className="text-emerald-400 font-black flex items-center gap-1.5">
-                <span>🎉</span> طعامك جاهز للتقديم وسيصلك فوراً!
+                <span>🎉</span> طعامك جاهز وسيوصلك فوراً!
               </p>
             )}
           </div>
         )}
       </header>
 
-      {/* 2. المحتوى الوسطي: عرض الأطباق التابعة للفئة المحددة */}
+      {/* المحتوى الوسطي */}
       <main className="p-4 space-y-3">
+        {/* نموذج التوصيل إذا اختار طلب خارجي */}
+        {orderType === 'delivery' && (
+          <div className="bg-slate-800/80 border border-blue-500/30 p-4 rounded-3xl space-y-2.5 mb-2">
+            <div className="flex justify-between items-center text-xs text-blue-400 font-black">
+              <span>📝 معلومات التوصيل السريع</span>
+              <span className="bg-blue-500/20 text-blue-300 border border-blue-500/30 px-2 py-0.5 rounded-lg text-[10px]">
+                رسوم التوصيل: 15 درهم
+              </span>
+            </div>
+            <input
+              type="text"
+              placeholder="الاسم الكامل *"
+              value={customerName}
+              onChange={(e) => setCustomerName(e.target.value)}
+              className="w-full p-2.5 rounded-xl border border-slate-700 bg-slate-900 text-slate-100 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-amber-500"
+            />
+            <input
+              type="tel"
+              placeholder="رقم الهاتف *"
+              value={customerPhone}
+              onChange={(e) => setCustomerPhone(e.target.value)}
+              className="w-full p-2.5 rounded-xl border border-slate-700 bg-slate-900 text-slate-100 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-amber-500"
+            />
+            <input
+              type="text"
+              placeholder="العنوان السكني التفصيلي *"
+              value={customerAddress}
+              onChange={(e) => setCustomerAddress(e.target.value)}
+              className="w-full p-2.5 rounded-xl border border-slate-700 bg-slate-900 text-slate-100 text-xs font-bold focus:outline-none focus:ring-1 focus:ring-amber-500"
+            />
+          </div>
+        )}
+
         <div className="flex justify-between items-center mb-2">
           <h2 className="text-sm font-black text-slate-300">{activeCategory}</h2>
           <span className="text-xs text-slate-500 font-bold">{filteredItems.length} عنصر</span>
@@ -188,7 +306,7 @@ function CustomerMenu() {
                   بدون صورة
                 </div>
               )}
-              
+
               <div className="flex-1 min-w-0">
                 <h3 className="text-sm font-black text-slate-100 truncate">{item.name}</h3>
                 <p className="text-xs font-black text-emerald-400 mt-1.5">{item.price} درهم</p>
@@ -205,7 +323,7 @@ function CustomerMenu() {
         )}
       </main>
 
-      {/* زر السلة العائم (يظهر عند اختيار أطباق) */}
+      {/* زر السلة العائم */}
       {cart.length > 0 && !isCartOpen && (
         <div className="fixed bottom-20 left-4 right-4 max-w-md mx-auto z-40">
           <button
@@ -223,7 +341,7 @@ function CustomerMenu() {
         </div>
       )}
 
-      {/* 3. الشريط السفلي الثابت (Bottom Navigation Bar): الفئات والتصنيفات */}
+      {/* الشريط السفلي الثابت */}
       <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-slate-900/95 backdrop-blur-lg border-t border-slate-800 p-3 z-30 flex justify-around items-center shadow-2xl">
         {categories.map((cat, idx) => (
           <button
@@ -244,7 +362,6 @@ function CustomerMenu() {
       {isCartOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-end justify-center p-0">
           <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-t-[35px] p-6 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto text-slate-100">
-            
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">
               <h3 className="text-base font-black text-slate-100">تفاصيل سلة الطلبات</h3>
               <button
@@ -282,22 +399,35 @@ function CustomerMenu() {
               <textarea
                 value={orderNote}
                 onChange={(e) => setOrderNote(e.target.value)}
-                placeholder="مثال: بدون بصل، الطاولة باردة..."
+                placeholder="مثال: بدون بصل، حار..."
                 className="w-full p-3 rounded-2xl border border-slate-700 bg-slate-800 text-slate-100 focus:outline-none focus:ring-2 focus:ring-amber-500 text-xs font-bold"
                 rows="2"
               ></textarea>
             </div>
 
-            <div className="flex justify-between items-center border-t border-slate-800 pt-3 font-black text-base">
-              <span className="text-slate-400">الإجمالي الكلي:</span>
-              <span className="text-amber-400">{totalPrice} درهم</span>
+            {/* تفاصيل المجموع والرسوم */}
+            <div className="border-t border-slate-800 pt-3 space-y-1 text-xs font-bold">
+              <div className="flex justify-between text-slate-400">
+                <span>مجموع الأطباق:</span>
+                <span>{subtotal} درهم</span>
+              </div>
+              {orderType === 'delivery' && (
+                <div className="flex justify-between text-blue-400">
+                  <span>رسوم التوصيل:</span>
+                  <span>15 درهم</span>
+                </div>
+              )}
+              <div className="flex justify-between items-center border-t border-slate-800 pt-2 font-black text-base">
+                <span className="text-slate-300">الإجمالي الكلي:</span>
+                <span className="text-amber-400 text-lg">{totalPrice} درهم</span>
+              </div>
             </div>
 
             <button
               onClick={handleSendOrder}
               className="w-full bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-black py-4 rounded-2xl shadow-xl transition cursor-pointer flex items-center justify-center gap-2"
             >
-              تأكيد وإرسال الطلب للمطبخ 🚀
+              تأكيد وإرسال الطلب ({totalPrice} درهم) 🚀
             </button>
           </div>
         </div>
