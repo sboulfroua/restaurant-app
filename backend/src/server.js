@@ -21,7 +21,7 @@ const io = new Server(httpServer, {
 // تفعيل استماع الأحداث
 initSocket(io);
 
-const PORT = 4000;
+const PORT = process.env.PORT || 4000;
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server listening on http://10.58.162.61:${PORT}`);
 });
