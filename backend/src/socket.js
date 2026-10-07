@@ -68,18 +68,8 @@ let memoryOrders = [];
 
 // دالة حساب مبيعات اليوم والشهر
 const calculateSalesStats = (ordersList) => {
-  const todayStr = new Date().toLocaleDateString('ar-MA');
-  const currentMonth = new Date().getMonth();
-  const currentYear = new Date().getFullYear();
-
-  let todayTotal = 0;
-  let monthTotal = 0;
-
-  ordersList.forEach((order) => {
-    // يمكنك تعديل منطق حساب التواريخ بناءً على نظام التاريخ لديك
-    todayTotal += Number(order.total || 0);
-    monthTotal += Number(order.total || 0);
-  });
+  const todayTotal = ordersList.reduce((acc, order) => acc + Number(order.total || 0), 0);
+  const monthTotal = todayTotal; // يمكن تخصيصها بناءً على التواريخ
 
   return { todayTotal, monthTotal };
 };
@@ -211,4 +201,5 @@ const PORT = process.env.PORT || 4000;
 httpServer.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server listening on port ${PORT}`);
 });
+
 export default httpServer;
