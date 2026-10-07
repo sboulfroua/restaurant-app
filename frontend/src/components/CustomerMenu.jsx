@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import io from 'socket.io-client';
 
-const socket = io('http://10.252.215.46:4000');
+const socket = io('https://ministries-robot-stores-felt.trycloudflare.com');
 
 // نغمة مميزة ومريحة للزبون عند تحديث حالة الطلب
 const playCustomerNotificationSound = () => {

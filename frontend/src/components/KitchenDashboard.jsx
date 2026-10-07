@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import io from 'socket.io-client';
 
-const socket = io('http://10.252.215.46:4000');
+const socket = io('https://ministries-robot-stores-felt.trycloudflare.com');
 
 // دالة التنبيه الصوتي الحاد والمجرب للمطبخ
 const playHighKitchenBell = () => {
