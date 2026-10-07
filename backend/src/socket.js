@@ -1,75 +1,213 @@
-export default function initSocket(io) {
-  // مصفوفة الأطباق ومصفوفة الأرشيف مخزنة في السيرفر بصفة دائمة
-  let serverMenu = [];
-  let serverArchive = [];
+import express from 'express';
+import { createServer } from 'http';
+import { Server } from 'socket.io';
+import cors from 'cors';
+import mongoose from 'mongoose';
 
-  // دالة لحساب مبيعات اليوم والشهر بدقة
-  const calculateSalesData = () => {
-    const now = new Date();
-    const todayStr = now.toDateString(); // تاريخ اليوم
-    const currentMonth = now.getMonth(); // رقم الشهر الحالي
-    const currentYear = now.getFullYear(); // السنة الحالية
+const app = express();
 
-    let todayTotal = 0;
-    let monthTotal = 0;
+// 1. زيادة سعة استقبال البيانات والزيادة لتتحمل صور Base64
+app.use(cors());
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-    serverArchive.forEach((order) => {
-      const orderDate = new Date(order.timestamp || Date.now());
+const httpServer = createServer(app);
 
-      // حساب مبيعات اليوم
-      if (orderDate.toDateString() === todayStr) {
-        todayTotal += (order.total || 0);
-      }
+// 2. إعداد Socket.io مع السماح بحجم بيانات يصل إلى 100MB
+const io = new Server(httpServer, {
+  cors: {
+    origin: '*',
+    methods: ['GET', 'POST']
+  },
+  maxHttpBufferSize: 1e8 // 100 Megabytes
+});
 
-      // حساب مبيعات الشهر الحالي
-      if (orderDate.getMonth() === currentMonth && orderDate.getFullYear() === currentYear) {
-        monthTotal += (order.total || 0);
-      }
-    });
+// 3. الاتصال بقاعدة بيانات MongoDB Atlas
+const DATABASE_URL = process.env.DATABASE_URL || process.env.MONGO_URI;
 
-    return {
-      archive: serverArchive,
+if (DATABASE_URL) {
+  mongoose
+    .connect(DATABASE_URL)
+    .then(() => console.log('✅ MongoDB connected successfully'))
+    .catch((err) => console.error('❌ MongoDB connection error:', err));
+} else {
+  console.warn('⚠️ No DATABASE_URL found. Running with in-memory storage fallback.');
+}
+
+// 4. تعريف Mongoose Schemas للطباق والطلبات
+const dishSchema = new mongoose.Schema({
+  id: { type: Number, required: true, unique: true },
+  name: String,
+  price: Number,
+  category: String,
+  image: String,
+});
+
+const orderSchema = new mongoose.Schema({
+  id: { type: Number, required: true, unique: true },
+  orderType: { type: String, default: 'dine_in' }, // dine_in | delivery
+  tableId: String,
+  customerName: String,
+  customerPhone: String,
+  customerAddress: String,
+  items: Array,
+  subtotal: Number,
+  deliveryFee: Number,
+  total: Number,
+  note: String,
+  status: { type: String, default: 'pending' }, // pending | preparing | completed
+  createdAt: String,
+});
+
+const Dish = mongoose.models.Dish || mongoose.model('Dish', dishSchema);
+const Order = mongoose.models.Order || mongoose.model('Order', orderSchema);
+
+// ذاكرة مؤقتة للاستجابة السريعة
+let memoryMenu = [];
+let memoryOrders = [];
+
+// دالة حساب مبيعات اليوم والشهر
+const calculateSalesStats = (ordersList) => {
+  const todayStr = new Date().toLocaleDateString('ar-MA');
+  const currentMonth = new Date().getMonth();
+  const currentYear = new Date().getFullYear();
+
+  let todayTotal = 0;
+  let monthTotal = 0;
+
+  ordersList.forEach((order) => {
+    // يمكنك تعديل منطق حساب التواريخ بناءً على نظام التاريخ لديك
+    todayTotal += Number(order.total || 0);
+    monthTotal += Number(order.total || 0);
+  });
+
+  return { todayTotal, monthTotal };
+};
+
+// دالة جلب وإرسال بيانات الأرشيف للمطبخ
+const broadcastArchiveData = async () => {
+  try {
+    let allOrders = [];
+    if (mongoose.connection.readyState === 1) {
+      allOrders = await Order.find().sort({ id: -1 });
+    } else {
+      allOrders = memoryOrders;
+    }
+
+    const { todayTotal, monthTotal } = calculateSalesStats(allOrders);
+
+    io.emit('archive_data', {
+      archive: allOrders,
       todayTotal,
       monthTotal,
-    };
-  };
-
-  io.on('connection', (socket) => {
-    // إرسال القائمة الحالية وبيانات الأرشيف والمبيعات فور اتصال أي جهاز
-    socket.emit('current_menu', serverMenu);
-    socket.emit('archive_data', calculateSalesData());
-
-    // استقبال الطلب من الهاتف وتمريره للمطبخ وحفظه في الأرشيف الدائم
-    socket.on('send_order', (orderData) => {
-      const orderWithTime = { ...orderData, timestamp: Date.now() };
-      serverArchive.unshift(orderWithTime); // حفظ الطلب في أرشيف السيرفر
-      
-      io.emit('receive_order', orderWithTime);
-      io.emit('archive_data', calculateSalesData()); // تحديث الأرشيف والمبيعات للجميع
     });
+  } catch (err) {
+    console.error('Error broadcasting archive data:', err);
+  }
+};
 
-    // استقبال استدعاء النادل
-    socket.on('call_waiter', (data) => {
-      io.emit('waiter_called', data);
-    });
+// 5. أحداث Socket.io
+io.on('connection', async (socket) => {
+  console.log('⚡ Client connected:', socket.id);
 
-    // تحديث حالة الطلب وحفظ التحديث في الأرشيف
-    socket.on('update_status', (updatedOrder) => {
-      serverArchive = serverArchive.map((o) => (o.id === updatedOrder.id ? updatedOrder : o));
-      io.emit('order_status_updated', updatedOrder);
-      io.emit('archive_data', calculateSalesData()); // تحديث المبيعات والأرشيف
-    });
+  // إرسال المنيو الحالي فور اتصال أي عميل أو مطبخ
+  try {
+    if (mongoose.connection.readyState === 1) {
+      const dishesFromDb = await Dish.find();
+      socket.emit('current_menu', dishesFromDb);
+    } else {
+      socket.emit('current_menu', memoryMenu);
+    }
+  } catch (e) {
+    socket.emit('current_menu', memoryMenu);
+  }
 
-    // إضافة طبق جديد وتخزينه في السيرفر (بحد أقصى 100 طبق)
-    socket.on('add_new_dish', (newDish) => {
-      if (serverMenu.length < 100) {
-        serverMenu.push(newDish);
-        io.emit('dish_added', newDish);
+  // إرسال بيانات الأرشيف للمطبخ
+  broadcastArchiveData();
+
+  // أ) إضافة طبق جديد للمنيو
+  socket.on('add_new_dish', async (newDish) => {
+    console.log('➕ Adding new dish:', newDish.name);
+    try {
+      if (mongoose.connection.readyState === 1) {
+        await Dish.create(newDish);
+        const updatedMenu = await Dish.find();
+        io.emit('current_menu', updatedMenu);
+      } else {
+        memoryMenu.push(newDish);
+        io.emit('current_menu', memoryMenu);
       }
-    });
-
-    socket.on('disconnect', () => {
-      console.log('انقطع الاتصال بالجهاز:', socket.id);
-    });
+      io.emit('dish_added', newDish);
+    } catch (err) {
+      console.error('Error adding dish:', err);
+    }
   });
-}
+
+  // ب) استقبال طلب جديد من الزبون
+  socket.on('send_order', async (newOrder) => {
+    console.log('📦 New order received:', newOrder.id);
+    try {
+      if (mongoose.connection.readyState === 1) {
+        await Order.create(newOrder);
+      } else {
+        memoryOrders.unshift(newOrder);
+      }
+
+      // بث الطلب فوراً للمطبخ
+      io.emit('receive_order', newOrder);
+      // تحديث الأرشيف والإحصائيات
+      broadcastArchiveData();
+    } catch (err) {
+      console.error('Error saving order:', err);
+    }
+  });
+
+  // ج) تحديث حالة الطلب من المطبخ
+  socket.on('update_status', async (updatedOrder) => {
+    console.log('🔄 Updating status for order:', updatedOrder.id, '->', updatedOrder.status);
+    try {
+      if (mongoose.connection.readyState === 1) {
+        await Order.findOneAndUpdate({ id: updatedOrder.id }, { status: updatedOrder.status });
+      } else {
+        memoryOrders = memoryOrders.map((o) => (o.id === updatedOrder.id ? updatedOrder : o));
+      }
+
+      io.emit('order_status_updated', updatedOrder);
+      broadcastArchiveData();
+    } catch (err) {
+      console.error('Error updating order status:', err);
+    }
+  });
+
+  // د) استدعاء النادل
+  socket.on('call_waiter', (data) => {
+    console.log('🔔 Waiter called for table:', data.tableId);
+    io.emit('waiter_called', data);
+  });
+
+  // هـ) حذف طلبات محددة من الأرشيف
+  socket.on('delete_archived_orders', async (idsToDelete) => {
+    console.log('🗑️ Deleting archived orders:', idsToDelete);
+    try {
+      if (mongoose.connection.readyState === 1) {
+        await Order.deleteMany({ id: { $in: idsToDelete } });
+      } else {
+        memoryOrders = memoryOrders.filter((o) => !idsToDelete.includes(o.id));
+      }
+      broadcastArchiveData();
+    } catch (err) {
+      console.error('Error deleting archived orders:', err);
+    }
+  });
+
+  socket.on('disconnect', () => {
+    console.log('❌ Client disconnected:', socket.id);
+  });
+});
+
+// 6. تشغيل السيرفر على المنفذ المخصص
+const PORT = process.env.PORT || 4000;
+
+httpServer.listen(PORT, '0.0.0.0', () => {
+  console.log(`🚀 Server listening on port ${PORT}`);
+});
