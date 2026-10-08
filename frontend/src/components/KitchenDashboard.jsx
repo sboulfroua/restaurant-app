@@ -55,13 +55,15 @@ function KitchenDashboard() {
   const [customMenu, setCustomMenu] = useState([]);
 
   useEffect(() => {
-    socket.on('current_menu', (menu) => setCustomMenu(menu));
-
-    socket.on('archive_data', (data) => {
+    const handleMenuUpdate = (menu) => setCustomMenu(Array.isArray(menu) ? menu : []);
+    const handleArchiveUpdate = (data) => {
       setArchivedOrders(data.archive || []);
       setTodayTotal(data.todayTotal || 0);
       setMonthTotal(data.monthTotal || 0);
-    });
+    };
+
+    socket.on('current_menu', handleMenuUpdate);
+    socket.on('archive_data', handleArchiveUpdate);
 
     socket.on('receive_order', (newOrder) => {
       setOrders((prev) => [newOrder, ...prev]);
@@ -82,8 +84,8 @@ function KitchenDashboard() {
     });
 
     return () => {
-      socket.off('current_menu');
-      socket.off('archive_data');
+      socket.off('current_menu', handleMenuUpdate);
+      socket.off('archive_data', handleArchiveUpdate);
       socket.off('receive_order');
       socket.off('waiter_called');
       socket.off('dish_added');
@@ -259,7 +261,7 @@ function KitchenDashboard() {
 
   if (!isAuthenticated) {
     return (
-      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4 dir-rtl" dir="rtl">
+      <div className="min-h-screen bg-slate-900 flex items-center justify-center p-4" dir="rtl">
         <div className="bg-white w-full max-w-md p-8 rounded-3xl shadow-2xl">
           <div className="text-center mb-6">
             <h1 className="text-2xl font-black text-slate-800">دخول شاشة المطبخ</h1>
@@ -310,7 +312,7 @@ function KitchenDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-slate-100 flex dir-rtl" dir="rtl">
+    <div className="min-h-screen bg-slate-100 flex" dir="rtl">
       {/* القائمة الجانبية */}
       <aside className="w-64 bg-slate-900 text-white flex flex-col justify-between p-4 shadow-xl shrink-0">
         <div>

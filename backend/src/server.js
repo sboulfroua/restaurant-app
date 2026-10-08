@@ -119,6 +119,9 @@ io.on('connection', async (socket) => {
   socket.on('add_new_dish', async (newDish) => {
     console.log('➕ Adding new dish:', newDish.name);
     try {
+      if (!newDish.id) newDish.id = Date.now();
+      newDish.price = Number(newDish.price);
+
       if (mongoose.connection.readyState === 1) {
         await Dish.create(newDish);
         const updatedMenu = await Dish.find();
@@ -137,6 +140,8 @@ io.on('connection', async (socket) => {
   socket.on('send_order', async (newOrder) => {
     console.log('📦 New order received:', newOrder.id);
     try {
+      if (!newOrder.id) newOrder.id = Date.now();
+
       if (mongoose.connection.readyState === 1) {
         await Order.create(newOrder);
       } else {

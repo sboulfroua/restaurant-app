@@ -2,10 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import io from 'socket.io-client';
 
-// رابط السيرفر الجديد على Back4App
-const socket = io('https://restaurantapp-pjw6hote.b4a.run/');
+// رابط السيرفر الفعال على Back4App
+const socket = io('https://restaurantapp-pjw6hote.b4a.run');
 
-// نغمة مميزة ومريحة للزبون عند تحديث حالة الطلب
 const playCustomerNotificationSound = () => {
   try {
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -41,11 +40,9 @@ function CustomerMenu() {
   const { tableId } = useParams();
   const currentTable = tableId || '1';
 
-  // نوع الطلب: 'dine_in' (داخل المطعم) أو 'delivery' (توصيل خارجي)
   const [orderType, setOrderType] = useState('dine_in');
   const [showTypeModal, setShowTypeModal] = useState(true);
 
-  // بيانات التوصيل الخارجي
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
   const [customerAddress, setCustomerAddress] = useState('');
@@ -55,15 +52,28 @@ function CustomerMenu() {
   const [currentOrder, setCurrentOrder] = useState(null);
   const [orderNote, setOrderNote] = useState('');
 
-  // التصنيف النشط للتصفية
   const [activeCategory, setActiveCategory] = useState('أطباق رئيسية');
   const [menuItems, setMenuItems] = useState([]);
 
   useEffect(() => {
-    socket.on('current_menu', (menu) => {
-      setMenuItems(menu || []);
+    // استقبال قائمة الأطباق بالكامل عند الاتصال أو التحديث
+    const handleMenuUpdate = (menu) => {
+      if (Array.isArray(menu)) {
+        setMenuItems(menu);
+      }
+    };
+
+    socket.on('current_menu', handleMenuUpdate);
+
+    // استقبال التحديث عند إضافة طبق جديد
+    socket.on('dish_added', (newDish) => {
+      setMenuItems((prev) => {
+        if (prev.some((item) => item.id === newDish.id)) return prev;
+        return [...prev, newDish];
+      });
     });
 
+    // تحديث حالة الطلب الحالي للزبون
     socket.on('order_status_updated', (updatedOrder) => {
       if (
         (updatedOrder.orderType === 'dine_in' && String(updatedOrder.tableId) === String(currentTable)) ||
@@ -74,18 +84,10 @@ function CustomerMenu() {
       }
     });
 
-    socket.on('dish_added', (newDish) => {
-      setMenuItems((prev) => {
-        if (prev.some((item) => item.id === newDish.id)) return prev;
-        if (prev.length >= 100) return prev;
-        return [...prev, newDish];
-      });
-    });
-
     return () => {
-      socket.off('current_menu');
-      socket.off('order_status_updated');
+      socket.off('current_menu', handleMenuUpdate);
       socket.off('dish_added');
+      socket.off('order_status_updated');
     };
   }, [currentTable, customerPhone]);
 
@@ -152,8 +154,8 @@ function CustomerMenu() {
   const filteredItems = menuItems.filter((item) => item.category === activeCategory);
 
   return (
-    <div className="max-w-md mx-auto min-h-screen bg-slate-900 text-slate-100 pb-32 font-sans dir-rtl" dir="rtl">
-      {/* نافذة اختيار نوع الطلب أولاً */}
+    <div className="max-w-md mx-auto min-h-screen bg-slate-900 text-slate-100 pb-32 font-sans" dir="rtl">
+      {/* نافذة اختيار نوع الطلب */}
       {showTypeModal && (
         <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 w-full max-w-sm p-6 rounded-3xl shadow-2xl text-center space-y-5">
@@ -195,7 +197,7 @@ function CustomerMenu() {
         </div>
       )}
 
-      {/* الشريط العلوي الثابت */}
+      {/* الشريط العلوي */}
       <header className="sticky top-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 p-4 space-y-3">
         <div className="flex justify-between items-center">
           <div>
@@ -226,7 +228,7 @@ function CustomerMenu() {
           </div>
         </div>
 
-        {/* عرض حالة الطلب الحالي */}
+        {/* حالة الطلب الحالي */}
         {currentOrder && (
           <div className="bg-slate-800/80 border border-slate-700/60 p-3 rounded-2xl text-xs">
             <div className="flex justify-between items-center mb-1 text-slate-400 font-bold">
@@ -252,9 +254,8 @@ function CustomerMenu() {
         )}
       </header>
 
-      {/* المحتوى الوسطي */}
+      {/* المحتوى الرئيسي */}
       <main className="p-4 space-y-3">
-        {/* نموذج التوصيل إذا اختار طلب خارجي */}
         {orderType === 'delivery' && (
           <div className="bg-slate-800/80 border border-blue-500/30 p-4 rounded-3xl space-y-2.5 mb-2">
             <div className="flex justify-between items-center text-xs text-blue-400 font-black">
@@ -341,7 +342,7 @@ function CustomerMenu() {
         </div>
       )}
 
-      {/* الشريط السفلي الثابت */}
+      {/* الشريط السفلي */}
       <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-slate-900/95 backdrop-blur-lg border-t border-slate-800 p-3 z-30 flex justify-around items-center shadow-2xl">
         {categories.map((cat, idx) => (
           <button
@@ -358,7 +359,7 @@ function CustomerMenu() {
         ))}
       </nav>
 
-      {/* نافذة تفاصيل السلة وإرسال الطلب */}
+      {/* نافذة تفاصيل السلة */}
       {isCartOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-end justify-center p-0">
           <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-t-[35px] p-6 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto text-slate-100">
@@ -405,7 +406,6 @@ function CustomerMenu() {
               ></textarea>
             </div>
 
-            {/* تفاصيل المجموع والرسوم */}
             <div className="border-t border-slate-800 pt-3 space-y-1 text-xs font-bold">
               <div className="flex justify-between text-slate-400">
                 <span>مجموع الأطباق:</span>

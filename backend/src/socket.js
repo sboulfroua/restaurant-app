@@ -6,7 +6,7 @@ import mongoose from 'mongoose';
 
 const app = express();
 
-// 1. زيادة سعة استقبال البيانات والزيادة لتتحمل صور Base64
+// 1. زيادة سعة استقبال البيانات لتتحمل صور Base64 الكبيرة
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
@@ -34,7 +34,7 @@ if (DATABASE_URL) {
   console.warn('⚠️ No DATABASE_URL found. Running with in-memory storage fallback.');
 }
 
-// 4. تعريف Mongoose Schemas للطباق والطلبات
+// 4. تعريف Mongoose Schemas للأطباق والطلبات
 const dishSchema = new mongoose.Schema({
   id: { type: Number, required: true, unique: true },
   name: String,
@@ -69,7 +69,7 @@ let memoryOrders = [];
 // دالة حساب مبيعات اليوم والشهر
 const calculateSalesStats = (ordersList) => {
   const todayTotal = ordersList.reduce((acc, order) => acc + Number(order.total || 0), 0);
-  const monthTotal = todayTotal; // يمكن تخصيصها بناءً على التواريخ
+  const monthTotal = todayTotal;
 
   return { todayTotal, monthTotal };
 };
@@ -119,6 +119,10 @@ io.on('connection', async (socket) => {
   socket.on('add_new_dish', async (newDish) => {
     console.log('➕ Adding new dish:', newDish.name);
     try {
+      // ضمان وجود ID فريد وتنسيق السعر رقمياً
+      if (!newDish.id) newDish.id = Date.now();
+      newDish.price = Number(newDish.price);
+
       if (mongoose.connection.readyState === 1) {
         await Dish.create(newDish);
         const updatedMenu = await Dish.find();
@@ -128,8 +132,9 @@ io.on('connection', async (socket) => {
         io.emit('current_menu', memoryMenu);
       }
       io.emit('dish_added', newDish);
+      console.log('✅ Dish added and broadcasted successfully:', newDish.name);
     } catch (err) {
-      console.error('Error adding dish:', err);
+      console.error('❌ Error adding dish:', err);
     }
   });
 
@@ -137,6 +142,7 @@ io.on('connection', async (socket) => {
   socket.on('send_order', async (newOrder) => {
     console.log('📦 New order received:', newOrder.id);
     try {
+      if (!newOrder.id) newOrder.id = Date.now();
       if (mongoose.connection.readyState === 1) {
         await Order.create(newOrder);
       } else {
@@ -148,7 +154,7 @@ io.on('connection', async (socket) => {
       // تحديث الأرشيف والإحصائيات
       broadcastArchiveData();
     } catch (err) {
-      console.error('Error saving order:', err);
+      console.error('❌ Error saving order:', err);
     }
   });
 
@@ -165,7 +171,7 @@ io.on('connection', async (socket) => {
       io.emit('order_status_updated', updatedOrder);
       broadcastArchiveData();
     } catch (err) {
-      console.error('Error updating order status:', err);
+      console.error('❌ Error updating order status:', err);
     }
   });
 
@@ -186,7 +192,7 @@ io.on('connection', async (socket) => {
       }
       broadcastArchiveData();
     } catch (err) {
-      console.error('Error deleting archived orders:', err);
+      console.error('❌ Error deleting archived orders:', err);
     }
   });
 
