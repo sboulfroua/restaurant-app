@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import io from 'socket.io-client';
 
 // رابط السيرفر المرفوع على Back4App
-const socket = io('https://restaurantapp-rj4e85fx.b4a.run/');
+const socket = io('https://restaurantapp-bgz4cclo.b4a.run/');
 
 // دالة التنبيه الصوتي الحاد والمجرب للمطبخ
 const playHighKitchenBell = () => {

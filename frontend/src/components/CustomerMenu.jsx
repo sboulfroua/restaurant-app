@@ -3,7 +3,7 @@ import { useParams } from 'react-router-dom';
 import io from 'socket.io-client';
 
 // رابط السيرفر الفعال على Back4App
-const socket = io('https://restaurantapp-rj4e85fx.b4a.run/');
+const socket = io('https://restaurantapp-bgz4cclo.b4a.run/');
 
 const playCustomerNotificationSound = () => {
   try {
