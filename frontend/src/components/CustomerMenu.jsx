@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import io from 'socket.io-client';
 
-// إعداد الاتصال بالسيرفر مع خيارات إعادة الاتصال التلقائي والبروتوكول السريع
 const socket = io('https://restaurantapp-kv60lfea.b4a.run', {
   transports: ['websocket', 'polling'],
   reconnection: true,
@@ -56,20 +55,25 @@ function CustomerMenu() {
   const [currentOrder, setCurrentOrder] = useState(null);
   const [orderNote, setOrderNote] = useState('');
 
+  const [categories, setCategories] = useState(['أطباق رئيسية', 'مقبلات', 'مشروبات', 'حلويات']);
   const [activeCategory, setActiveCategory] = useState('أطباق رئيسية');
   const [menuItems, setMenuItems] = useState([]);
 
   useEffect(() => {
-    // استقبال قائمة الأطباق بالكامل عند الاتصال أو التحديث
     const handleMenuUpdate = (menu) => {
-      if (Array.isArray(menu)) {
-        setMenuItems(menu);
+      if (Array.isArray(menu)) setMenuItems(menu);
+    };
+
+    const handleCategoriesUpdate = (cats) => {
+      if (Array.isArray(cats) && cats.length > 0) {
+        setCategories(cats);
+        setActiveCategory((prevCat) => (cats.includes(prevCat) ? prevCat : cats[0]));
       }
     };
 
     socket.on('current_menu', handleMenuUpdate);
+    socket.on('current_categories', handleCategoriesUpdate);
 
-    // استقبال التحديث عند إضافة طبق جديد
     socket.on('dish_added', (newDish) => {
       setMenuItems((prev) => {
         if (prev.some((item) => item.id === newDish.id)) return prev;
@@ -77,7 +81,6 @@ function CustomerMenu() {
       });
     });
 
-    // تحديث حالة الطلب الحالي للزبون
     socket.on('order_status_updated', (updatedOrder) => {
       if (
         (updatedOrder.orderType === 'dine_in' && String(updatedOrder.tableId) === String(currentTable)) ||
@@ -90,6 +93,7 @@ function CustomerMenu() {
 
     return () => {
       socket.off('current_menu', handleMenuUpdate);
+      socket.off('current_categories', handleCategoriesUpdate);
       socket.off('dish_added');
       socket.off('order_status_updated');
     };
@@ -154,12 +158,10 @@ function CustomerMenu() {
     alert(`تم إرسال تنبيه للنادل للطاولة رقم ${currentTable}`);
   };
 
-  const categories = ['أطباق رئيسية', 'مقبلات', 'مشروبات', 'حلويات'];
   const filteredItems = menuItems.filter((item) => item.category === activeCategory);
 
   return (
     <div className="max-w-md mx-auto min-h-screen bg-slate-900 text-slate-100 pb-32 font-sans" dir="rtl">
-      {/* نافذة اختيار نوع الطلب */}
       {showTypeModal && (
         <div className="fixed inset-0 bg-slate-950/85 backdrop-blur-md z-50 flex items-center justify-center p-4">
           <div className="bg-slate-900 border border-slate-800 w-full max-w-sm p-6 rounded-3xl shadow-2xl text-center space-y-5">
@@ -201,7 +203,6 @@ function CustomerMenu() {
         </div>
       )}
 
-      {/* الشريط العلوي */}
       <header className="sticky top-0 z-30 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 p-4 space-y-3">
         <div className="flex justify-between items-center">
           <div>
@@ -232,7 +233,6 @@ function CustomerMenu() {
           </div>
         </div>
 
-        {/* حالة الطلب الحالي */}
         {currentOrder && (
           <div className="bg-slate-800/80 border border-slate-700/60 p-3 rounded-2xl text-xs">
             <div className="flex justify-between items-center mb-1 text-slate-400 font-bold">
@@ -258,7 +258,6 @@ function CustomerMenu() {
         )}
       </header>
 
-      {/* المحتوى الرئيسي */}
       <main className="p-4 space-y-3">
         {orderType === 'delivery' && (
           <div className="bg-slate-800/80 border border-blue-500/30 p-4 rounded-3xl space-y-2.5 mb-2">
@@ -328,7 +327,6 @@ function CustomerMenu() {
         )}
       </main>
 
-      {/* زر السلة العائم */}
       {cart.length > 0 && !isCartOpen && (
         <div className="fixed bottom-20 left-4 right-4 max-w-md mx-auto z-40">
           <button
@@ -346,13 +344,12 @@ function CustomerMenu() {
         </div>
       )}
 
-      {/* الشريط السفلي */}
-      <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-slate-900/95 backdrop-blur-lg border-t border-slate-800 p-3 z-30 flex justify-around items-center shadow-2xl">
+      <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-slate-900/95 backdrop-blur-lg border-t border-slate-800 p-3 z-30 flex justify-around items-center shadow-2xl overflow-x-auto">
         {categories.map((cat, idx) => (
           <button
             key={idx}
             onClick={() => setActiveCategory(cat)}
-            className={`flex-1 py-2.5 mx-1 rounded-2xl text-[11px] font-black transition cursor-pointer text-center ${
+            className={`flex-1 py-2.5 px-2 mx-1 rounded-2xl text-[11px] font-black transition cursor-pointer text-center whitespace-nowrap ${
               activeCategory === cat
                 ? 'bg-amber-500 text-slate-950 shadow-lg'
                 : 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
@@ -363,7 +360,6 @@ function CustomerMenu() {
         ))}
       </nav>
 
-      {/* نافذة تفاصيل السلة */}
       {isCartOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-xs z-50 flex items-end justify-center p-0">
           <div className="bg-slate-900 border border-slate-800 w-full max-w-md rounded-t-[35px] p-6 shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto text-slate-100">

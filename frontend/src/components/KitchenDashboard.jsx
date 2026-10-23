@@ -1,14 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import io from 'socket.io-client';
 
-// إعداد الاتصال بالسيرفر مع خيارات إعادة الاتصال التلقائي والبروتوكول السريع
 const socket = io('https://restaurantapp-kv60lfea.b4a.run', {
   transports: ['websocket', 'polling'],
   reconnection: true,
   reconnectionDelay: 1000,
 });
 
-// دالة التنبيه الصوتي الحاد والمجرب للمطبخ
 const playHighKitchenBell = () => {
   try {
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -42,19 +40,20 @@ function KitchenDashboard() {
   const [loginForm, setLoginForm] = useState({ username: '', password: '' });
   const [loginError, setLoginError] = useState('');
 
-  const [activeTab, setActiveTab] = useState('orders'); // orders | menu | archive
-  const [orderFilter, setOrderFilter] = useState('all'); // all | dine_in | delivery
+  const [activeTab, setActiveTab] = useState('orders');
+  const [orderFilter, setOrderFilter] = useState('all');
 
   const [orders, setOrders] = useState([]);
   const [notifications, setNotifications] = useState([]);
   const [soundEnabled, setSoundEnabled] = useState(false);
 
-  // بيانات الأرشيف والمبيعات
   const [archivedOrders, setArchivedOrders] = useState([]);
   const [selectedArchiveIds, setSelectedArchiveIds] = useState([]);
   const [todayTotal, setTodayTotal] = useState(0);
   const [monthTotal, setMonthTotal] = useState(0);
 
+  const [categories, setCategories] = useState(['أطباق رئيسية', 'مقبلات', 'مشروبات', 'حلويات']);
+  const [newCategoryInput, setNewCategoryInput] = useState('');
   const [newDish, setNewDish] = useState({ name: '', price: '', category: 'أطباق رئيسية', image: '' });
   const [customMenu, setCustomMenu] = useState([]);
 
@@ -65,9 +64,16 @@ function KitchenDashboard() {
       setTodayTotal(data.todayTotal || 0);
       setMonthTotal(data.monthTotal || 0);
     };
+    const handleCategoriesUpdate = (cats) => {
+      if (Array.isArray(cats) && cats.length > 0) {
+        setCategories(cats);
+        setNewDish((prev) => ({ ...prev, category: cats[0] }));
+      }
+    };
 
     socket.on('current_menu', handleMenuUpdate);
     socket.on('archive_data', handleArchiveUpdate);
+    socket.on('current_categories', handleCategoriesUpdate);
 
     socket.on('receive_order', (newOrder) => {
       setOrders((prev) => [newOrder, ...prev]);
@@ -79,17 +85,18 @@ function KitchenDashboard() {
       playHighKitchenBell();
     });
 
-    socket.on('dish_added', (newDish) => {
+    socket.on('dish_added', (newDishItem) => {
       setCustomMenu((prev) => {
-        if (prev.some((item) => item.id === newDish.id)) return prev;
+        if (prev.some((item) => item.id === newDishItem.id)) return prev;
         if (prev.length >= 100) return prev;
-        return [...prev, newDish];
+        return [...prev, newDishItem];
       });
     });
 
     return () => {
       socket.off('current_menu', handleMenuUpdate);
       socket.off('archive_data', handleArchiveUpdate);
+      socket.off('current_categories', handleCategoriesUpdate);
       socket.off('receive_order');
       socket.off('waiter_called');
       socket.off('dish_added');
@@ -120,7 +127,6 @@ function KitchenDashboard() {
     }
   };
 
-  // دالة طباعة الفاتورة / الوصل
   const handlePrintOrder = (order) => {
     const printWindow = window.open('', '_blank', 'width=400,height=600');
     const itemsRows = order.items
@@ -202,7 +208,6 @@ function KitchenDashboard() {
     printWindow.document.close();
   };
 
-  // إدارة تحديد وإلغاء تحديد الأرشيف
   const handleSelectAllArchive = (e) => {
     if (e.target.checked) {
       setSelectedArchiveIds(archivedOrders.map((o) => o.id));
@@ -227,7 +232,6 @@ function KitchenDashboard() {
     }
   };
 
-  // دالة ضغط الصور المرفوعة وتقليل أبعادها لتسريع النقل عبر السيرفر
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
@@ -237,7 +241,7 @@ function KitchenDashboard() {
         img.src = event.target.result;
         img.onload = () => {
           const canvas = document.createElement('canvas');
-          const MAX_WIDTH = 400; // تحديد أقصى عرض للصورة بـ 400 بكسل
+          const MAX_WIDTH = 400;
           const scaleFactor = MAX_WIDTH / img.width;
           canvas.width = MAX_WIDTH;
           canvas.height = img.height * scaleFactor;
@@ -245,7 +249,6 @@ function KitchenDashboard() {
           const ctx = canvas.getContext('2d');
           ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-          // ضغط الصورة إلى 60% لتقليل الحجم لأقل من 100 كيلوبايت
           const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
           setNewDish((prev) => ({ ...prev, image: compressedBase64 }));
         };
@@ -266,13 +269,41 @@ function KitchenDashboard() {
       id: Date.now(),
       name: newDish.name,
       price: Number(newDish.price),
-      category: newDish.category,
+      category: newDish.category || categories[0],
       image: newDish.image,
     };
 
     socket.emit('add_new_dish', createdDish);
-    setNewDish({ name: '', price: '', category: 'أطباق رئيسية', image: '' });
+    setNewDish({ name: '', price: '', category: categories[0] || 'أطباق رئيسية', image: '' });
     alert('تم إضافة الطبق بنجاح!');
+  };
+
+  const handleDeleteDish = (dishId, dishName) => {
+    if (window.confirm(`هل أنت تأكد من حذف الطبق "${dishName}" من المنيو؟`)) {
+      socket.emit('delete_dish', dishId);
+    }
+  };
+
+  const handleAddCategory = (e) => {
+    e.preventDefault();
+    if (!newCategoryInput.trim()) return;
+    if (categories.includes(newCategoryInput.trim())) {
+      alert('هذا التصنيف موجود بالفعل!');
+      return;
+    }
+
+    socket.emit('add_category', newCategoryInput.trim());
+    setNewCategoryInput('');
+  };
+
+  const handleDeleteCategory = (catName) => {
+    if (categories.length <= 1) {
+      alert('يجب الإبقاء على تصنيف واحد على الأقل!');
+      return;
+    }
+    if (window.confirm(`هل أنت تأكد من حذف تصنيف "${catName}"؟`)) {
+      socket.emit('delete_category', catName);
+    }
   };
 
   const filteredOrders = orders.filter((o) => {
@@ -335,7 +366,6 @@ function KitchenDashboard() {
 
   return (
     <div className="min-h-screen bg-slate-100 flex" dir="rtl">
-      {/* القائمة الجانبية */}
       <aside className="w-64 bg-slate-900 text-white flex flex-col justify-between p-4 shadow-xl shrink-0">
         <div>
           <div className="p-4 border-b border-slate-800 mb-6 text-center">
@@ -359,7 +389,7 @@ function KitchenDashboard() {
                 activeTab === 'menu' ? 'bg-amber-500 text-slate-900' : 'hover:bg-slate-800 text-slate-300'
               }`}
             >
-              <span>➕</span> إضافة طبق وصورة ({customMenu.length})
+              <span>➕</span> المنيو والتصنيفات ({customMenu.length})
             </button>
 
             <button
@@ -381,14 +411,12 @@ function KitchenDashboard() {
         </button>
       </aside>
 
-      {/* المحتوى الرئيسي */}
       <main className="flex-1 p-6 overflow-y-auto">
-        {/* الهيدر العلوي */}
         <div className="flex justify-between items-center bg-white p-4 rounded-2xl shadow-sm mb-6 border border-slate-200">
           <div>
             <h2 className="text-xl font-black text-slate-800">
               {activeTab === 'orders' && 'الطلبات الحية المباشرة'}
-              {activeTab === 'menu' && 'إدارة المنيو وإضافة أطباق صور'}
+              {activeTab === 'menu' && 'إدارة المنيو والتصنيفات والأطباق'}
               {activeTab === 'archive' && 'أرشيف وتفاصيل المبيعات'}
             </h2>
           </div>
@@ -423,10 +451,8 @@ function KitchenDashboard() {
           </div>
         )}
 
-        {/* تبويب الطلبات الحية */}
         {activeTab === 'orders' && (
           <div>
-            {/* فلترة نوع الطلب */}
             <div className="flex gap-3 mb-6">
               <button
                 onClick={() => setOrderFilter('all')}
@@ -472,7 +498,6 @@ function KitchenDashboard() {
                     }`}
                   >
                     <div>
-                      {/* الهيدر مع زر الطباعة */}
                       <div className="flex justify-between items-start border-b pb-3 mb-3">
                         <div>
                           {order.orderType === 'delivery' ? (
@@ -494,7 +519,6 @@ function KitchenDashboard() {
                         </button>
                       </div>
 
-                      {/* تفاصيل التوصيل الخارجي إن وجد */}
                       {order.orderType === 'delivery' && (
                         <div className="bg-blue-50 border border-blue-200 rounded-xl p-3 mb-3 text-xs text-slate-700 space-y-1">
                           <p><strong>الاسم:</strong> {order.customerName || 'غير محدد'}</p>
@@ -504,7 +528,6 @@ function KitchenDashboard() {
                         </div>
                       )}
 
-                      {/* الأصناف */}
                       <div className="space-y-2 mb-3">
                         {order.items.map((item, idx) => (
                           <div key={idx} className="flex justify-between text-sm">
@@ -558,102 +581,153 @@ function KitchenDashboard() {
           </div>
         )}
 
-        {/* تبويب إضافة المنيو */}
         {activeTab === 'menu' && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="space-y-8">
             <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
-              <h3 className="text-lg font-black text-slate-800 mb-4">إضافة طبق جديد للمنيو ({customMenu.length}/100)</h3>
-              <form onSubmit={handleAddDish} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">اسم الطبق</label>
-                  <input
-                    type="text"
-                    required
-                    value={newDish.name}
-                    onChange={(e) => setNewDish({ ...newDish, name: e.target.value })}
-                    className="w-full p-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500 font-bold text-sm"
-                    placeholder="مثال: طاجين دجاج بالحامض"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-600 mb-1">السعر (درهم)</label>
-                    <input
-                      type="number"
-                      required
-                      value={newDish.price}
-                      onChange={(e) => setNewDish({ ...newDish, price: e.target.value })}
-                      className="w-full p-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500 font-bold text-sm"
-                      placeholder="60"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-600 mb-1">التصنيف</label>
-                    <select
-                      value={newDish.category}
-                      onChange={(e) => setNewDish({ ...newDish, category: e.target.value })}
-                      className="w-full p-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500 font-bold text-sm"
-                    >
-                      <option value="أطباق رئيسية">أطباق رئيسية</option>
-                      <option value="مقبلات">مقبلات</option>
-                      <option value="مشروبات">مشروبات</option>
-                      <option value="حلويات">حلويات</option>
-                    </select>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-600 mb-1">تحميل صورة الطبق من الجهاز</label>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    onChange={handleImageUpload}
-                    className="w-full p-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-500"
-                  />
-                  {newDish.image && (
-                    <img src={newDish.image} alt="معاينة" className="mt-3 h-28 w-full object-cover rounded-xl border" />
-                  )}
-                </div>
-
+              <h3 className="text-lg font-black text-slate-800 mb-4 flex items-center gap-2">
+                📁 إدارة أقسام المنيو (التصنيفات)
+              </h3>
+              
+              <form onSubmit={handleAddCategory} className="flex gap-3 mb-4">
+                <input
+                  type="text"
+                  placeholder="اسم التصنيف الجديد (مثلاً: مشاوي، سلطات...)"
+                  value={newCategoryInput}
+                  onChange={(e) => setNewCategoryInput(e.target.value)}
+                  className="flex-1 p-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500 font-bold text-sm"
+                />
                 <button
                   type="submit"
-                  className="w-full bg-slate-900 text-white font-bold py-3 rounded-xl shadow-lg hover:bg-slate-800 transition cursor-pointer text-sm"
+                  className="bg-amber-500 hover:bg-amber-600 text-slate-900 font-black px-5 py-3 rounded-xl transition cursor-pointer text-sm shadow"
                 >
-                  حفظ وإضافة الطبق ➕
+                  + إضافة تصنيف
                 </button>
               </form>
+
+              <div className="flex flex-wrap gap-2 pt-2">
+                {categories.map((cat, idx) => (
+                  <div
+                    key={idx}
+                    className="bg-slate-100 border border-slate-300 text-slate-800 font-bold text-xs px-3.5 py-2 rounded-xl flex items-center gap-2 shadow-xs"
+                  >
+                    <span>{cat}</span>
+                    <button
+                      onClick={() => handleDeleteCategory(cat)}
+                      className="text-red-500 hover:text-red-700 font-black text-sm transition cursor-pointer ml-1"
+                      title="حذف هذا التصنيف"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
 
-            <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
-              <h3 className="text-lg font-black text-slate-800 mb-4">الأطباق المضافة ({customMenu.length}/100)</h3>
-              <div className="space-y-3 max-h-[450px] overflow-y-auto">
-                {customMenu.length === 0 ? (
-                  <p className="text-sm text-slate-400 text-center py-10">لم يتم إضافة أي أطباق بعد.</p>
-                ) : (
-                  customMenu.map((item) => (
-                    <div key={item.id} className="flex items-center gap-4 p-3 border rounded-2xl">
-                      {item.image ? (
-                        <img src={item.image} alt={item.name} className="w-16 h-16 rounded-xl object-cover" />
-                      ) : (
-                        <div className="w-16 h-16 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-bold text-xs">
-                          لا صورة
-                        </div>
-                      )}
-                      <div className="flex-1">
-                        <h4 className="font-bold text-slate-800 text-sm">{item.name}</h4>
-                        <p className="text-xs text-amber-600 font-bold">{item.category}</p>
-                        <span className="font-black text-slate-900 text-sm">{item.price} درهم</span>
-                      </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+                <h3 className="text-lg font-black text-slate-800 mb-4">إضافة طبق جديد للمنيو ({customMenu.length}/100)</h3>
+                <form onSubmit={handleAddDish} className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">اسم الطبق</label>
+                    <input
+                      type="text"
+                      required
+                      value={newDish.name}
+                      onChange={(e) => setNewDish({ ...newDish, name: e.target.value })}
+                      className="w-full p-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500 font-bold text-sm"
+                      placeholder="مثال: طاجين دجاج بالحامض"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">السعر (درهم)</label>
+                      <input
+                        type="number"
+                        required
+                        value={newDish.price}
+                        onChange={(e) => setNewDish({ ...newDish, price: e.target.value })}
+                        className="w-full p-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500 font-bold text-sm"
+                        placeholder="60"
+                      />
                     </div>
-                  ))
-                )}
+                    <div>
+                      <label className="block text-xs font-bold text-slate-600 mb-1">التصنيف</label>
+                      <select
+                        value={newDish.category}
+                        onChange={(e) => setNewDish({ ...newDish, category: e.target.value })}
+                        className="w-full p-3 rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-amber-500 font-bold text-sm"
+                      >
+                        {categories.map((cat, idx) => (
+                          <option key={idx} value={cat}>
+                            {cat}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-600 mb-1">تحميل صورة الطبق من الجهاز</label>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleImageUpload}
+                      className="w-full p-2 rounded-xl border border-slate-300 text-xs font-bold text-slate-500"
+                    />
+                    {newDish.image && (
+                      <img src={newDish.image} alt="معاينة" className="mt-3 h-28 w-full object-cover rounded-xl border" />
+                    )}
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="w-full bg-slate-900 text-white font-bold py-3 rounded-xl shadow-lg hover:bg-slate-800 transition cursor-pointer text-sm"
+                  >
+                    حفظ وإضافة الطبق ➕
+                  </button>
+                </form>
+              </div>
+
+              <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200">
+                <h3 className="text-lg font-black text-slate-800 mb-4">الأطباق المضافة ({customMenu.length}/100)</h3>
+                <div className="space-y-3 max-h-[450px] overflow-y-auto">
+                  {customMenu.length === 0 ? (
+                    <p className="text-sm text-slate-400 text-center py-10">لم يتم إضافة أي أطباق بعد.</p>
+                  ) : (
+                    customMenu.map((item) => (
+                      <div key={item.id} className="flex items-center justify-between gap-4 p-3 border rounded-2xl">
+                        <div className="flex items-center gap-3">
+                          {item.image ? (
+                            <img src={item.image} alt={item.name} className="w-16 h-16 rounded-xl object-cover" />
+                          ) : (
+                            <div className="w-16 h-16 bg-slate-100 rounded-xl flex items-center justify-center text-slate-400 font-bold text-xs">
+                              لا صورة
+                            </div>
+                          )}
+                          <div>
+                            <h4 className="font-bold text-slate-800 text-sm">{item.name}</h4>
+                            <p className="text-xs text-amber-600 font-bold">{item.category}</p>
+                            <span className="font-black text-slate-900 text-sm">{item.price} درهم</span>
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={() => handleDeleteDish(item.id, item.name)}
+                          className="bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 px-3 py-2 rounded-xl text-xs font-bold transition cursor-pointer shrink-0"
+                          title="حذف هذا الطبق"
+                        >
+                          🗑️ حذف
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           </div>
         )}
 
-        {/* تبويب الأرشيف وإدارة الحذف */}
         {activeTab === 'archive' && (
           <div className="space-y-6">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
@@ -675,7 +749,6 @@ function KitchenDashboard() {
               <div className="flex justify-between items-center mb-4">
                 <h3 className="text-lg font-black text-slate-800">سجل الطلبات الكامل الدائم</h3>
 
-                {/* زر حذف الطلبات المحددة */}
                 {selectedArchiveIds.length > 0 && (
                   <button
                     onClick={handleDeleteSelectedArchive}
