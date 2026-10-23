@@ -2,8 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import io from 'socket.io-client';
 
-// رابط السيرفر الفعال على Back4App
-const socket = io('https://restaurantapp-bgz4cclo.b4a.run/');
+// إعداد الاتصال بالسيرفر مع خيارات إعادة الاتصال التلقائي والبروتوكول السريع
+const socket = io('https://restaurantapp-kv60lfea.b4a.run', {
+  transports: ['websocket', 'polling'],
+  reconnection: true,
+  reconnectionDelay: 1000,
+});
 
 const playCustomerNotificationSound = () => {
   try {

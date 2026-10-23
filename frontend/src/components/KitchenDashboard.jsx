@@ -1,8 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import io from 'socket.io-client';
 
-// رابط السيرفر المرفوع على Back4App
-const socket = io('https://restaurantapp-bgz4cclo.b4a.run/');
+// إعداد الاتصال بالسيرفر مع خيارات إعادة الاتصال التلقائي والبروتوكول السريع
+const socket = io('https://restaurantapp-kv60lfea.b4a.run', {
+  transports: ['websocket', 'polling'],
+  reconnection: true,
+  reconnectionDelay: 1000,
+});
 
 // دالة التنبيه الصوتي الحاد والمجرب للمطبخ
 const playHighKitchenBell = () => {
@@ -223,11 +227,29 @@ function KitchenDashboard() {
     }
   };
 
+  // دالة ضغط الصور المرفوعة وتقليل أبعادها لتسريع النقل عبر السيرفر
   const handleImageUpload = (e) => {
     const file = e.target.files[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => setNewDish((prev) => ({ ...prev, image: reader.result }));
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target.result;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          const MAX_WIDTH = 400; // تحديد أقصى عرض للصورة بـ 400 بكسل
+          const scaleFactor = MAX_WIDTH / img.width;
+          canvas.width = MAX_WIDTH;
+          canvas.height = img.height * scaleFactor;
+
+          const ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+          // ضغط الصورة إلى 60% لتقليل الحجم لأقل من 100 كيلوبايت
+          const compressedBase64 = canvas.toDataURL('image/jpeg', 0.6);
+          setNewDish((prev) => ({ ...prev, image: compressedBase64 }));
+        };
+      };
       reader.readAsDataURL(file);
     }
   };

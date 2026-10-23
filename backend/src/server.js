@@ -13,13 +13,15 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
 const httpServer = createServer(app);
 
-// 2. إعداد Socket.io مع السماح بحجم بيانات يصل إلى 100MB
+// 2. إعداد Socket.io مع إضافة نبضات الاستشعار لمنع انقطاع خادم Back4App
 const io = new Server(httpServer, {
   cors: {
     origin: '*',
     methods: ['GET', 'POST']
   },
-  maxHttpBufferSize: 1e8 // 100 Megabytes
+  maxHttpBufferSize: 1e8, // 100 Megabytes
+  pingInterval: 10000,    // إرسال نبضة استشعار كل 10 ثوانٍ للحفاظ على الاتصال
+  pingTimeout: 20000      // مهلة الاتصال 20 ثانية
 });
 
 // 3. الاتصال بقاعدة بيانات MongoDB Atlas
@@ -62,7 +64,7 @@ const orderSchema = new mongoose.Schema({
 const Dish = mongoose.models.Dish || mongoose.model('Dish', dishSchema);
 const Order = mongoose.models.Order || mongoose.model('Order', orderSchema);
 
-// ذاكرة مؤقتة للاستجابة السريعة في حال عدم توفر القاعدة
+// ذاكرة مؤقتة للاستجابة السريعة
 let memoryMenu = [];
 let memoryOrders = [];
 
