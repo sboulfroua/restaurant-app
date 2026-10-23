@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import io from 'socket.io-client';
 
-const socket = io('https://restaurantapp-kv60lfea.b4a.run', {
+const socket = io('https://restaurantapp-rs27484b.b4a.run/', {
   transports: ['websocket', 'polling'],
   reconnection: true,
   reconnectionDelay: 1000,
