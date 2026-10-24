@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import io from 'socket.io-client';
 
-const socket = io('https://restaurantapp-rs27484b.b4a.run/', {
+const socket = io('https://restaurantapp-19fw7qit.b4a.run/, {
   transports: ['websocket', 'polling'],
   reconnection: true,
   reconnectionDelay: 1000,
